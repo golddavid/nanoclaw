@@ -1,7 +1,16 @@
 # NanoClaw Agent Container
 # Runs Claude Agent SDK in isolated Linux VM with browser automation
 
-FROM node:22-slim
+FROM ubuntu:24.04
+
+# Suppress interactive prompts during apt installs
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install Node.js 22 via NodeSource
+RUN apt-get update && apt-get install -y ca-certificates curl gnupg \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install system dependencies for Chromium
 RUN apt-get update && apt-get install -y \
@@ -17,7 +26,7 @@ RUN apt-get update && apt-get install -y \
     libxcomposite1 \
     libxdamage1 \
     libxrandr2 \
-    libasound2 \
+    libasound2t64 \
     libpangocairo-1.0-0 \
     libcups2 \
     libdrm2 \
@@ -38,7 +47,8 @@ RUN ARCH=$(dpkg --print-architecture) && \
     elif [ "$ARCH" = "arm64" ]; then \
         curl -fsSL https://github.com/rtk-ai/rtk/releases/download/v0.36.0/rtk-aarch64-unknown-linux-gnu.tar.gz -o /tmp/rtk.tar.gz \
         && tar -xzf /tmp/rtk.tar.gz -C /usr/local/bin --strip-components=0 \
-        && chmod +x /usr/local/bin/rtk && rm /tmp/rtk.tar.gz; \
+        && chmod +x /usr/local/bin/rtk && rm /tmp/rtk.tar.gz \
+        && (rtk --version >/dev/null 2>&1 || (echo "RTK ARM64 binary requires newer glibc than this image provides — removing (hook degrades gracefully)" && rm -f /usr/local/bin/rtk)); \
     fi
 
 # Configure git to use gh as credential helper (token injected at runtime via GH_TOKEN)
@@ -67,6 +77,9 @@ COPY agent-runner/ ./
 
 # Build TypeScript
 RUN npm run build
+
+# Rename the default ubuntu user/group (uid/gid 1000) to node
+RUN usermod -l node ubuntu && usermod -d /home/node -m node && groupmod -n node ubuntu
 
 # Create workspace directories
 RUN mkdir -p /workspace/group /workspace/global /workspace/extra /workspace/ipc/messages /workspace/ipc/tasks /workspace/ipc/input
